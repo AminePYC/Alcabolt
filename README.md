@@ -134,5 +134,5 @@ Pull requests, model improvements, or UI ideas are welcome!
 
 ## 📧 **Contact**
 
-youremail@example.com\
+benamaraamine39@gmail.com\
 For feedback, suggestions, or bug reports.
