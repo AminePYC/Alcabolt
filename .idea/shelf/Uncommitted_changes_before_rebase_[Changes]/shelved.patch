@@ -1,0 +1,16 @@
+Index: gradle/wrapper/gradle-wrapper.properties
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+>#Sun Nov 30 18:08:05 CET 2025\r\ndistributionBase=GRADLE_USER_HOME\r\ndistributionPath=wrapper/dists\r\ndistributionUrl=https\\://services.gradle.org/distributions/gradle-8.13-bin.zip\r\nnetworkTimeout=10000\r\nvalidateDistributionUrl=true\r\nzipStoreBase=GRADLE_USER_HOME\r\nzipStorePath=wrapper/dists\r\n
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>ISO-8859-1
+===================================================================
+diff --git a/gradle/wrapper/gradle-wrapper.properties b/gradle/wrapper/gradle-wrapper.properties
+--- a/gradle/wrapper/gradle-wrapper.properties	(revision cba9f8159e6aa2df7b5a5b47adabdb4d07872138)
++++ b/gradle/wrapper/gradle-wrapper.properties	(date 1764523278573)
+@@ -1,4 +1,4 @@
+-#Sun Nov 30 18:08:05 CET 2025
++#Sun Nov 30 18:21:18 CET 2025
+ distributionBase=GRADLE_USER_HOME
+ distributionPath=wrapper/dists
+ distributionUrl=https\://services.gradle.org/distributions/gradle-8.13-bin.zip
