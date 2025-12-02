@@ -33,9 +33,12 @@ class TtsViewModel(
     var isTranslating by mutableStateOf(false)
         private set
     var isSpeaking by mutableStateOf(false)
-        private set
+    /*    private set
     var statusMessage by mutableStateOf<String?>(null)
         private set
+*/
+
+    var statusMessage by mutableStateOf<String?>(null)
 
     // --- Data Persistence (Used by HistoryScreen) ---
     // 🚨 FIX: This public flow is what HistoryScreen needs to collect its data.
@@ -125,7 +128,9 @@ class TtsViewModel(
 
     // This function is public for external UI access (HistoryCard)
     fun speakText(text: String) {
-        val locale = Locale.forLanguageTag(TranslateLanguage.toLanguageTag(targetLanguage))
+        //val locale = Locale.forLanguageTag(TranslateLanguage.toLanguageTag(targetLanguage))
+        val locale = Locale.forLanguageTag(targetLanguage)
+
         appTts.language = locale
         appTts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "UTT_ID_SPEAK")
         isSpeaking = true

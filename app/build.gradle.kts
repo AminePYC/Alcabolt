@@ -92,6 +92,8 @@ dependencies {
     implementation("com.google.mlkit:language-id:17.0.5")
     implementation("com.google.mlkit:translate:17.0.0")
 
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.7.3")
+
     // --- Room Database (Persistence) ---
     implementation("androidx.room:room-runtime:$room_version")
     implementation("androidx.room:room-ktx:$room_version")
