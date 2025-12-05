@@ -25,7 +25,7 @@ class TtsViewModel(
     private val dao: TextEntryDao
 ) : ViewModel() {
 
-    // --- State Management (Used by InputScreen) ---
+    // --- State Management (InputScreen) ---
     var originalText by mutableStateOf("")
         private set
     var translatedText by mutableStateOf("")
@@ -33,28 +33,40 @@ class TtsViewModel(
     var isTranslating by mutableStateOf(false)
         private set
     var isSpeaking by mutableStateOf(false)
-    /*    private set
-    var statusMessage by mutableStateOf<String?>(null)
         private set
-*/
-
+    // FIX: Removed 'private set' so InputScreen can clear the message.
     var statusMessage by mutableStateOf<String?>(null)
 
-    // --- Data Persistence (Used by HistoryScreen) ---
-    // 🚨 FIX: This public flow is what HistoryScreen needs to collect its data.
+    // --- Data Persistence (HistoryScreen) ---
     val historyEntries: Flow<List<TextEntry>> = dao.getAllEntries()
 
-    // --- Translation Setup ---
-    // Available languages (simplified list for demonstration)
-    val sourceLanguage by mutableStateOf(TranslateLanguage.ENGLISH)
-    val targetLanguage by mutableStateOf(TranslateLanguage.FRENCH)
+    // --- Language Configuration ---
 
-    private val translator = Translation.getClient(
+    // NEW: Map of display names to ML Kit codes
+    val supportedLanguages = mapOf(
+        "English" to TranslateLanguage.ENGLISH,
+        "French" to TranslateLanguage.FRENCH,
+        "Spanish" to TranslateLanguage.SPANISH,
+        "German" to TranslateLanguage.GERMAN,
+        "Arabic" to TranslateLanguage.ARABIC,
+        "Chinese" to TranslateLanguage.CHINESE,
+        "Russian" to TranslateLanguage.RUSSIAN,
+        "Japanese" to TranslateLanguage.JAPANESE
+    )
+
+    // CHANGE: Make mutable state variables for language selection
+    var sourceLanguage by mutableStateOf(TranslateLanguage.ENGLISH)
+    var targetLanguage by mutableStateOf(TranslateLanguage.FRENCH)
+
+    // NEW: Function to create a new translator client
+    private fun createTranslator() = Translation.getClient(
         TranslatorOptions.Builder()
             .setSourceLanguage(sourceLanguage)
             .setTargetLanguage(targetLanguage)
             .build()
     )
+
+    private var translator = createTranslator()
 
     init {
         downloadTranslationModels()
@@ -65,6 +77,29 @@ class TtsViewModel(
             override fun onError(utteranceId: String?) { isSpeaking = false; statusMessage = "TTS Error." }
         })
     }
+
+    // NEW: Function to handle language changes
+    fun onLanguageChange(isSource: Boolean, newLangCode: String) {
+        // Prevent setting the same language for source and target
+        if (isSource && newLangCode == targetLanguage) return
+        if (!isSource && newLangCode == sourceLanguage) return
+
+        if (isSource) {
+            sourceLanguage = newLangCode
+        } else {
+            targetLanguage = newLangCode
+        }
+
+        // Re-initialize translator and models for the new pair
+        translator.close()
+        translator = createTranslator()
+        downloadTranslationModels()
+
+        originalText = ""
+        translatedText = ""
+        statusMessage = "Language set to ${supportedLanguages.entries.first { it.value == newLangCode }.key}"
+    }
+
 
     // --- Data Handlers ---
 
@@ -82,6 +117,7 @@ class TtsViewModel(
 
     private fun downloadTranslationModels() = viewModelScope.launch {
         try {
+            // Check if model is already downloaded (optional optimization)
             statusMessage = "Downloading language models..."
             val conditions = DownloadConditions.Builder().requireWifi().build()
             translator.downloadModelIfNeeded(conditions).await()
@@ -117,7 +153,7 @@ class TtsViewModel(
             statusMessage = "Please enter text to speak."
             return
         }
-        speakText(originalText)
+        speakText(originalText, isOriginal = true)
         translatedText = ""
     }
 
@@ -126,12 +162,18 @@ class TtsViewModel(
         isSpeaking = false
     }
 
-    // This function is public for external UI access (HistoryCard)
-    fun speakText(text: String) {
-        //val locale = Locale.forLanguageTag(TranslateLanguage.toLanguageTag(targetLanguage))
-        val locale = Locale.forLanguageTag(targetLanguage)
+    // CHANGE: Added optional parameter to select language for speech
+    fun speakText(text: String, isOriginal: Boolean = false) {
+        val languageToSpeak = if (isOriginal) sourceLanguage else targetLanguage
+        val locale = Locale.forLanguageTag(TranslateLanguage.toLanguageTag(languageToSpeak))
 
-        appTts.language = locale
+        // Check if language is available for TTS
+        val result = appTts.setLanguage(locale)
+        if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
+            statusMessage = "TTS language missing/not supported for: ${languageToSpeak}"
+            return
+        }
+
         appTts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "UTT_ID_SPEAK")
         isSpeaking = true
     }
@@ -157,10 +199,15 @@ class TtsViewModel(
             return
         }
 
+        // NOTE: Standard Android TTS produces WAV files, not MP3.
         val audioFile = File(context.getExternalFilesDir(null), "$fileName.wav")
 
         val params = android.os.Bundle()
         params.putString(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, "UTT_ID_EXPORT")
+
+        // Use the target language for export
+        val locale = Locale.forLanguageTag(TranslateLanguage.toLanguageTag(targetLanguage))
+        appTts.language = locale
 
         val result = appTts.synthesizeToFile(text, params, audioFile, "UTT_ID_EXPORT")
 
