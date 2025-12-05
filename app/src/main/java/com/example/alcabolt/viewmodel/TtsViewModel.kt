@@ -7,8 +7,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.alcabolt.data.TextEntry
-import com.example.alcabolt.data.TextEntryDao
+import com.example.alcabolt.SpeechRecognizerHelper // <-- Added for STT functionality
+import com.example.alcabolt.data.TextEntry // Assuming you have this data class
+import com.example.alcabolt.data.TextEntryDao // Assuming you have this DAO interface
 import com.google.mlkit.common.model.DownloadConditions
 import com.google.mlkit.nl.translate.TranslateLanguage
 import com.google.mlkit.nl.translate.Translation
@@ -22,10 +23,10 @@ import java.util.Locale
 
 class TtsViewModel(
     private val appTts: TextToSpeech,
-    private val dao: TextEntryDao
+    private val dao: TextEntryDao // Database Access Object for history
 ) : ViewModel() {
 
-    // --- State Management (InputScreen) ---
+    // --- State Management (Exposed to UI) ---
     var originalText by mutableStateOf("")
         private set
     var translatedText by mutableStateOf("")
@@ -34,15 +35,14 @@ class TtsViewModel(
         private set
     var isSpeaking by mutableStateOf(false)
         private set
-    // FIX: Removed 'private set' so InputScreen can clear the message.
-    var statusMessage by mutableStateOf<String?>(null)
+    var isRecording by mutableStateOf(false) // State for Audio-to-Audio input
+        private set
+    var statusMessage by mutableStateOf<String?>(null) // Used for Snackbar/status updates
 
-    // --- Data Persistence (HistoryScreen) ---
+    // --- Data Persistence ---
     val historyEntries: Flow<List<TextEntry>> = dao.getAllEntries()
 
     // --- Language Configuration ---
-
-    // NEW: Map of display names to ML Kit codes
     val supportedLanguages = mapOf(
         "English" to TranslateLanguage.ENGLISH,
         "French" to TranslateLanguage.FRENCH,
@@ -54,11 +54,14 @@ class TtsViewModel(
         "Japanese" to TranslateLanguage.JAPANESE
     )
 
-    // CHANGE: Make mutable state variables for language selection
     var sourceLanguage by mutableStateOf(TranslateLanguage.ENGLISH)
     var targetLanguage by mutableStateOf(TranslateLanguage.FRENCH)
 
-    // NEW: Function to create a new translator client
+    // --- ML Kit & TTS Resources ---
+    private var translator = createTranslator()
+    private var sttHelper: SpeechRecognizerHelper? = null
+
+    // Helper to create the ML Kit Translator client
     private fun createTranslator() = Translation.getClient(
         TranslatorOptions.Builder()
             .setSourceLanguage(sourceLanguage)
@@ -66,11 +69,10 @@ class TtsViewModel(
             .build()
     )
 
-    private var translator = createTranslator()
-
     init {
         downloadTranslationModels()
 
+        // Setup TTS Listener for speaking state management
         appTts.setOnUtteranceProgressListener(object : android.speech.tts.UtteranceProgressListener() {
             override fun onStart(utteranceId: String?) { isSpeaking = true }
             override fun onDone(utteranceId: String?) { isSpeaking = false }
@@ -78,11 +80,63 @@ class TtsViewModel(
         })
     }
 
-    // NEW: Function to handle language changes
+    // --- STT/Audio-to-Audio Functions ---
+
+    /**
+     * Initializes the SpeechRecognizerHelper with all necessary callbacks.
+     * Must be called from the Composable when the UI is first created.
+     */
+    fun initializeSttHelper(context: Context) {
+        if (sttHelper == null) {
+            sttHelper = SpeechRecognizerHelper(
+                context = context,
+                onResult = { result ->
+                    // 1. Text received, set it as the original text
+                    onTextChange(result)
+                    // 2. STT result -> Automatic Translate & Speak (Audio-to-Audio flow)
+                    translateAndSpeak()
+                },
+                onError = { error ->
+                    statusMessage = error
+                    isRecording = false
+                },
+                onReady = { isReady ->
+                    isRecording = isReady
+                    if(isReady) statusMessage = "Recording voice input..." else statusMessage = null
+                }
+            )
+        }
+    }
+
+    /**
+     * Toggles the recording state for the Audio-to-Audio Translation workflow.
+     */
+    fun toggleAudioToAudio() {
+        if (isRecording) {
+            sttHelper?.stopListening()
+        } else {
+            // Stop TTS if it's running before recording
+            if(isSpeaking) stopSpeaking()
+            // Start listening in the current source language
+            sttHelper?.startListening(sourceLanguage)
+        }
+    }
+
+    // --- Language and UI Handlers ---
+
+    fun onTextChange(newText: String) {
+        originalText = newText
+        translatedText = ""
+    }
+
     fun onLanguageChange(isSource: Boolean, newLangCode: String) {
         // Prevent setting the same language for source and target
         if (isSource && newLangCode == targetLanguage) return
         if (!isSource && newLangCode == sourceLanguage) return
+
+        // Stop any active processes
+        if (isRecording) toggleAudioToAudio()
+        if (isSpeaking) stopSpeaking()
 
         if (isSource) {
             sourceLanguage = newLangCode
@@ -100,24 +154,10 @@ class TtsViewModel(
         statusMessage = "Language set to ${supportedLanguages.entries.first { it.value == newLangCode }.key}"
     }
 
-
-    // --- Data Handlers ---
-
-    fun onTextChange(newText: String) {
-        originalText = newText
-        translatedText = ""
-    }
-
-    fun deleteEntry(entry: TextEntry) = viewModelScope.launch(Dispatchers.IO) {
-        dao.deleteEntry(entry.id)
-        statusMessage = "Entry deleted."
-    }
-
-    // --- Core Functions ---
+    // --- Core Translation/TTS Logic ---
 
     private fun downloadTranslationModels() = viewModelScope.launch {
         try {
-            // Check if model is already downloaded (optional optimization)
             statusMessage = "Downloading language models..."
             val conditions = DownloadConditions.Builder().requireWifi().build()
             translator.downloadModelIfNeeded(conditions).await()
@@ -137,8 +177,10 @@ class TtsViewModel(
         try {
             translatedText = translator.translate(originalText).await()
             statusMessage = "Translation complete."
+
             speakText(translatedText)
 
+            // Save the entry to history after successful translation and speech start
             saveEntry(originalText, translatedText, sourceLanguage, targetLanguage)
 
         } catch (e: Exception) {
@@ -154,7 +196,7 @@ class TtsViewModel(
             return
         }
         speakText(originalText, isOriginal = true)
-        translatedText = ""
+        translatedText = "" // Clear translated text when speaking original
     }
 
     fun stopSpeaking() {
@@ -162,7 +204,6 @@ class TtsViewModel(
         isSpeaking = false
     }
 
-    // CHANGE: Added optional parameter to select language for speech
     fun speakText(text: String, isOriginal: Boolean = false) {
         val languageToSpeak = if (isOriginal) sourceLanguage else targetLanguage
         val locale = Locale.forLanguageTag(TranslateLanguage.toLanguageTag(languageToSpeak))
@@ -178,28 +219,18 @@ class TtsViewModel(
         isSpeaking = true
     }
 
-    private fun saveEntry(
-        original: String,
-        translated: String,
-        source: String,
-        target: String
-    ) = viewModelScope.launch(Dispatchers.IO) {
-        val entry = TextEntry(
-            originalText = original,
-            translatedText = translated,
-            sourceLangCode = source,
-            targetLangCode = target
-        )
-        dao.insertEntry(entry)
-    }
+    // --- Export and Database ---
 
+    /**
+     * Synthesizes text to a WAV file and saves it to external storage.
+     */
     fun exportAudio(context: Context, text: String, fileName: String) {
-        if (isSpeaking) {
-            statusMessage = "Please stop the current speech before exporting."
+        if (isSpeaking || isRecording) {
+            statusMessage = "Please stop the current process before exporting."
             return
         }
 
-        // NOTE: Standard Android TTS produces WAV files, not MP3.
+        // Standard Android TTS produces WAV files
         val audioFile = File(context.getExternalFilesDir(null), "$fileName.wav")
 
         val params = android.os.Bundle()
@@ -218,10 +249,34 @@ class TtsViewModel(
         }
     }
 
+    private fun saveEntry(
+        original: String,
+        translated: String,
+        source: String,
+        target: String
+    ) = viewModelScope.launch(Dispatchers.IO) {
+        val entry = TextEntry(
+            originalText = original,
+            translatedText = translated,
+            sourceLangCode = source,
+            targetLangCode = target
+        )
+        dao.insertEntry(entry)
+    }
+
+    fun deleteEntry(entry: TextEntry) = viewModelScope.launch(Dispatchers.IO) {
+        dao.deleteEntry(entry.id)
+        statusMessage = "Entry deleted."
+    }
+
+    // --- Resource Cleanup ---
+
     override fun onCleared() {
+        // Essential cleanup for Android services and ML Kit client
         appTts.stop()
         appTts.shutdown()
         translator.close()
+        sttHelper?.destroy()
         super.onCleared()
     }
 }

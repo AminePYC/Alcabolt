@@ -2,14 +2,12 @@ package com.example.alcabolt.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
@@ -34,14 +32,15 @@ fun InputScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val lifecycleOwner = LocalLifecycleOwner.current
 
-    // 🚨 NEW: Lifecycle management for STT helper
+    // --- Lifecycle and STT Initialization ---
     LaunchedEffect(Unit) {
+        // Initialize the Speech-to-Text helper instance
         viewModel.initializeSttHelper(context)
 
+        // Stop recording if the app screen is paused (e.g., user hits home or switches apps)
         val observer = LifecycleEventObserver { _, event ->
-            // Good practice: Stop listening when the screen is paused/backgrounded
-            if (event == Lifecycle.Event.ON_PAUSE && viewModel.isListening) {
-                viewModel.toggleListening()
+            if (event == Lifecycle.Event.ON_PAUSE && viewModel.isRecording) {
+                viewModel.toggleAudioToAudio()
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -50,6 +49,7 @@ fun InputScreen(
         }
     }
 
+    // --- Status Message Handling ---
     LaunchedEffect(viewModel.statusMessage) {
         viewModel.statusMessage?.let { message ->
             scope.launch {
@@ -136,7 +136,7 @@ fun InputScreen(
                     TextField(
                         value = viewModel.originalText,
                         onValueChange = viewModel::onTextChange,
-                        label = { Text("Enter text or speak now...") },
+                        label = { Text("Enter text or use 'Speak & Translate'...") },
                         colors = TextFieldDefaults.colors(
                             focusedContainerColor = Color.Transparent,
                             unfocusedContainerColor = Color.Transparent,
@@ -174,70 +174,56 @@ fun InputScreen(
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // --- 3. Control Buttons ---
+            // --- 3. Control Buttons (Audio-to-Audio and Manual Speak) ---
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // 🚨 NEW: Speech-to-Text Toggle Button
-                FloatingActionButton(
-                    onClick = viewModel::toggleListening,
-                    modifier = Modifier.size(64.dp),
-                    containerColor = if (viewModel.isListening) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.secondary,
-                    contentColor = MaterialTheme.colorScheme.onSecondary
-                ) {
-                    Icon(
-                        if (viewModel.isListening) Icons.Filled.Stop else Icons.Filled.Mic,
-                        contentDescription = if (viewModel.isListening) "Stop Listening" else "Start Voice Input"
-                    )
-                }
+                // Audio-to-Audio Toggle Button (Primary Action)
+                ExtendedFloatingActionButton(
+                    onClick = viewModel::toggleAudioToAudio,
+                    modifier = Modifier.weight(1f).height(64.dp),
+                    containerColor = if (viewModel.isRecording) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                    icon = {
+                        Icon(
+                            if (viewModel.isRecording) Icons.Filled.Stop else Icons.Filled.Mic,
+                            contentDescription = if (viewModel.isRecording) "Stop Recording" else "Start Voice Translation"
+                        )
+                    },
+                    text = { Text(if (viewModel.isRecording) "STOP RECORDING" else "SPEAK & TRANSLATE") }
+                )
 
                 Spacer(Modifier.width(16.dp))
 
-                // Translate & Speak Button (Primary Action)
-                ExtendedFloatingActionButton(
+                // Manual Text Translate Button (If the user types text first)
+                FloatingActionButton(
                     onClick = viewModel::translateAndSpeak,
-                    modifier = Modifier.weight(1f),
-                    icon = {
-                        if (viewModel.isTranslating) {
-                            CircularProgressIndicator(
-                                Modifier.size(24.dp),
-                                color = MaterialTheme.colorScheme.onPrimary,
-                                strokeWidth = 3.dp
-                            )
-                        } else {
-                            Icon(Icons.Filled.Translate, contentDescription = "Translate")
-                        }
-                    },
-                    text = { Text("Translate") },
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    contentColor = MaterialTheme.colorScheme.onPrimary
-                )
+                    modifier = Modifier.size(64.dp),
+                    enabled = viewModel.originalText.isNotBlank() && !viewModel.isTranslating && !viewModel.isRecording,
+                    containerColor = MaterialTheme.colorScheme.secondary,
+                    contentColor = MaterialTheme.colorScheme.onSecondary
+                ) {
+                    if (viewModel.isTranslating) {
+                        CircularProgressIndicator(
+                            Modifier.size(32.dp),
+                            color = MaterialTheme.colorScheme.onSecondary,
+                            strokeWidth = 3.dp
+                        )
+                    } else {
+                        Icon(Icons.Filled.Translate, contentDescription = "Translate Typed Text")
+                    }
+                }
             }
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // --- 4. Secondary Actions (Speak Original / Export) ---
+            // --- 4. Secondary Actions (Export / Speak Input / Stop TTS) ---
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceEvenly,
             ) {
-                // Speak Original Button (Replaced Stop)
-                OutlinedButton(
-                    onClick = viewModel::speakOriginal,
-                    modifier = Modifier.weight(1f).height(48.dp),
-                    enabled = viewModel.originalText.isNotBlank() && !viewModel.isSpeaking,
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onSurface),
-                    border = BorderDefaults.outlinedButtonBorder.copy(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
-                ) {
-                    Icon(Icons.Filled.VolumeUp, contentDescription = "Speak Original")
-                    Spacer(Modifier.width(8.dp))
-                    Text("Speak Input")
-                }
-
-                Spacer(Modifier.width(16.dp))
-
                 // Export Audio Button
                 OutlinedButton(
                     onClick = {
@@ -256,9 +242,24 @@ fun InputScreen(
                     Spacer(Modifier.width(8.dp))
                     Text("Export WAV")
                 }
+
+                Spacer(Modifier.width(16.dp))
+
+                // Speak Input Button
+                OutlinedButton(
+                    onClick = viewModel::speakOriginal,
+                    modifier = Modifier.weight(1f).height(48.dp),
+                    enabled = viewModel.originalText.isNotBlank() && !viewModel.isSpeaking,
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onSurface),
+                    border = BorderDefaults.outlinedButtonBorder.copy(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
+                ) {
+                    Icon(Icons.Filled.VolumeUp, contentDescription = "Speak Original")
+                    Spacer(Modifier.width(8.dp))
+                    Text("Speak Input")
+                }
             }
 
-            // 🚨 NEW: Stop Speaking Button (moved to its own row for clarity)
+            // Stop TTS Button (Separate row for visual weight/importance)
             Spacer(Modifier.height(8.dp))
             OutlinedButton(
                 onClick = viewModel::stopSpeaking,
@@ -276,7 +277,8 @@ fun InputScreen(
     }
 }
 
-// LanguageDropdown Composable (remains the same)
+// --- Composable Function Definition ---
+
 @Composable
 fun LanguageDropdown(
     label: String,

@@ -8,12 +8,13 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface TextEntryDao {
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertEntry(entry: TextEntry)
 
-    @Query("SELECT * FROM text_history ORDER BY timestamp DESC")
+    @Query("SELECT * FROM translation_history ORDER BY timestamp DESC")
     fun getAllEntries(): Flow<List<TextEntry>>
 
-    @Query("DELETE FROM text_history WHERE id = :id")
+    @Query("DELETE FROM translation_history WHERE id = :id")
     suspend fun deleteEntry(id: Int)
 }

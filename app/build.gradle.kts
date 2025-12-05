@@ -48,7 +48,8 @@ android {
         compose = true
     }
     composeOptions {
-        kotlinCompilerExtensionVersion = "1.5.1"
+        // Updated extension version for better compatibility with Room/Kapt and Compose 1.6.x
+        kotlinCompilerExtensionVersion = "1.5.11"
     }
     packaging {
         resources {
@@ -57,20 +58,24 @@ android {
     }
 }
 
-dependencies {
-    // --- Compose Version Variables ---
-    val compose_version = "1.9.5"
-    val material3_version = "1.4.0"
-    val nav_version = "2.9.6"
-    val koin_version = "4.1.1"
-    val room_version = "2.8.4"
+// Added Kapt configuration to improve error handling during stub generation.
+kapt {
+    // This tells Kapt to try to recover when encountering types that are not yet compiled,
+    // which can sometimes prevent the NonExistentClass error.
+    correctErrorTypes = true
+}
 
-    // --- Core Android & Compatibility (FIXED TO USE DIRECT STRINGS) ---
-    // Previously: implementation(libs.core.ktx)
+dependencies {
+    // --- Dependency Version Variables (Using known stable versions) ---
+    val compose_version = "1.6.0" // Standard Compose UI version
+    val material3_version = "1.2.1" // Standard Material 3 version
+    val nav_version = "2.7.7" // Stable Navigation-Compose version
+    val koin_version = "3.5.3" // Corrected Koin version to a stable release
+    val room_version = "2.6.1" // Room is mandatory for the compiler
+
+    // --- Core Android & Compatibility ---
     implementation("androidx.core:core-ktx:1.13.1")
-    // Previously: implementation(libs.lifecycle.runtime.ktx)
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.1")
-    // Previously: implementation(libs.activity.compose)
     implementation("androidx.activity:activity-compose:1.9.0")
 
     // --- Compose UI and Material 3 ---
@@ -91,19 +96,17 @@ dependencies {
     // --- ML Kit Dependencies (Translation) ---
     implementation("com.google.mlkit:language-id:17.0.5")
     implementation("com.google.mlkit:translate:17.0.0")
-
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.7.3")
 
     // --- Room Database (Persistence) ---
+    // Ensure the versions are consistent and correct (kapt is mandatory for the compiler)
     implementation("androidx.room:room-runtime:$room_version")
     implementation("androidx.room:room-ktx:$room_version")
     kapt("androidx.room:room-compiler:$room_version")
 
-    // --- Testing Dependencies (FIXED TO USE DIRECT STRINGS) ---
-    testImplementation(libs.junit) // This one might still work
-    // Previously: androidTestImplementation(libs.androidx.test.ext.junit)
+    // --- Testing Dependencies ---
+    testImplementation(libs.junit)
     androidTestImplementation("androidx.test.ext:junit:1.1.5")
-    // Previously: androidTestImplementation(libs.espresso.core)
     androidTestImplementation("androidx.test.espresso:espresso-core:3.5.1")
 
     androidTestImplementation("androidx.compose.ui:ui-test-junit4:$compose_version")
